@@ -10,6 +10,7 @@ from flygym.util.config import all_leg_dofs
 from scipy.signal import medfilt
 from scipy.integrate import ode
 from alive_progress import alive_bar
+import help_hybrid as hlph
 
 import PIL.Image
 
@@ -251,7 +252,7 @@ obs_list_tripod = []
 
 with alive_bar(num_steps) as bar:
     for i in range(num_steps):
-
+        print(i, '/', num_steps)
         res = solver.integrate(nmf.curr_time)
         phase = res[:n_oscillators]
         amp = res[n_oscillators:2 * n_oscillators]

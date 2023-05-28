@@ -164,6 +164,8 @@ def compute_leg_scores(rule1_corresponding_legs, rule1_weight,
 np.random.seed(42)
 
 num_steps = n_stabilisation_steps + num_steps_base
+print('n_stabilisation_steps', n_stabilisation_steps)
+print('num_steps_base', num_steps_base)
 
 # This serves to keep track of the advancement of each leg in the stepping sequence
 stepping_advancement = np.zeros(len(legs)).astype(int)
@@ -183,42 +185,45 @@ obs_list_cruse_gapped = []
 all_initiated_legs = []
 
 # Run the actual simulation
-with alive_bar(num_steps) as bar:
-    for i in trange(num_steps):
-        # Decide in which leg to step
-        initiating_leg = np.argmax(leg_scores)
-        within_margin_legs = leg_scores[initiating_leg] - leg_scores <= leg_scores[initiating_leg] * percent_margin
 
-        # If multiple legs are within the margin choose randomly among those legs
-        if np.sum(within_margin_legs) > 1:
-            initiating_leg = np.random.choice(np.where(within_margin_legs)[0])
+for i in trange(num_steps):
+    print(i, '/', num_steps)
+    # Decide in which leg to step
+    initiating_leg = np.argmax(leg_scores)
+    within_margin_legs = leg_scores[initiating_leg] - leg_scores <= leg_scores[initiating_leg] * percent_margin
 
-        # If the maximal score is zero or less (except for the first step after stabilisation to initate the locomotion) or if the leg is already stepping
-        if (leg_scores[initiating_leg] <= 0 and not i == n_stabilisation_steps + 1) or stepping_advancement[
-            initiating_leg] > 0:
-            initiating_leg = None
-        else:
-            stepping_advancement[initiating_leg] += 1
-            all_initiated_legs.append([initiating_leg, i])
+    # If multiple legs are within the margin choose randomly among those legs
+    if np.sum(within_margin_legs) > 1:
+        initiating_leg = np.random.choice(np.where(within_margin_legs)[0])
 
-        joint_pos = step_data_block_manualcorrect[joint_ids, stepping_advancement[match_leg_to_joints]]
-        action = {'joints': joint_pos}
-        if i == 1:
-            print(action['joints'].shape)
+    # If the maximal score is zero or less (except for the first step after stabilisation to initate the locomotion) or if the leg is already stepping
+    if (leg_scores[initiating_leg] <= 0 and not i == n_stabilisation_steps + 1) or stepping_advancement[
+        initiating_leg] > 0:
+        initiating_leg = None
+    else:
+        stepping_advancement[initiating_leg] += 1
+        all_initiated_legs.append([initiating_leg, i])
 
-        obs, info = nmf_gapped.step(action)
-        nmf_gapped.render()
-        obs_list_cruse_gapped.append(obs)
+    joint_pos = step_data_block_manualcorrect[joint_ids, stepping_advancement[match_leg_to_joints]]
+    action = {'joints': joint_pos}
+    if i == 1:
+        print(action['joints'].shape)
 
-        stepping_advancement = update_stepping_advancement(stepping_advancement, legs, interp_step_duration)
+    print(action)
+    obs, info = nmf_gapped.step(action)
 
-        leg_scores = compute_leg_scores(rule1_corresponding_legs, rule1_weight,
-                                        rule2_corresponding_legs, rule2_weight, rule2_weight_contralateral,
-                                        rule3_corresponding_legs, rule3_weight, rule3_weight_contralateral,
-                                        stepping_advancement, leg_corresp_id, leg_stance_starts, interp_step_duration)
+    nmf_gapped.render()
+    obs_list_cruse_gapped.append(obs)
 
-        all_leg_scores[:, i] = leg_scores
-        bar()
+    stepping_advancement = update_stepping_advancement(stepping_advancement, legs, interp_step_duration)
+
+    leg_scores = compute_leg_scores(rule1_corresponding_legs, rule1_weight,
+                                    rule2_corresponding_legs, rule2_weight, rule2_weight_contralateral,
+                                    rule3_corresponding_legs, rule3_weight, rule3_weight_contralateral,
+                                    stepping_advancement, leg_corresp_id, leg_stance_starts, interp_step_duration)
+
+    all_leg_scores[:, i] = leg_scores
+
 
 nmf_gapped.save_video(out_dir / 'cruse_gapped.mp4')
 nmf_gapped.close()
