@@ -60,6 +60,34 @@ class MyNMF(gym.Env):
     def close(self):
         return self.nmf.close()
 
+    def _reward_lr_course(self):
+        """ Implementation of the reward function """
+        # reward facing forwards
+        heading_reward = np.sum(
+            np.cos(self.robot.GetBaseOrientationRollPitchYaw())) * self._time_step * self._action_repeat
+
+        # penalize crouching
+        crouching_penalty = -abs(
+            self.robot.GetBasePosition()[2] - self.robot._GetDefaultInitPosition()[2]) * self._time_step
+
+        # reward forward motion
+        current_base_position = self.robot.GetBasePosition()
+        forward_reward = current_base_position[0] - self._last_base_position[0]
+        max_dist = MAX_FWD_VELOCITY * self._time_step * self._action_repeat
+        forward_reward = forward_reward  # but not if it's cheating
+
+        # penalize sideways motion
+        sideways_penalty = -np.abs(current_base_position[1] - self._last_base_position[1])
+
+
+        self._last_base_position = current_base_position
+        self._CoT = np.sum(self.robot.GetMotorTorques() * self.robot.GetMotorVelocities()) * self._time_step
+
+        reward = self._heading_weight * (heading_reward + crouching_penalty) + \
+                 self._distance_weight * (forward_reward + sideways_penalty)
+
+        return reward
+
 
 run_time = 0.5
 nmf_env_headless = MyNMF(render_mode='headless',

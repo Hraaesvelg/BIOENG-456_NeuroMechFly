@@ -98,7 +98,7 @@ def show_cpg_result(nmf,step_data_block_base, num_joints_to_visualize, joint_ang
     plt.tight_layout()
 
 
-
+"""
 body = ['Thorax', 'A1A2', 'A3', 'A4', 'A5', 'A6', 'Head_roll', 'Head_yaw',
  'Head', 'LEye', 'LPedicel_roll', 'LPedicel_yaw', 'LPedicel',
  'LFuniculus_roll', 'LFuniculus_yaw', 'LFuniculus', 'LArista_roll',
@@ -154,5 +154,4 @@ joints = ['joint_Head_roll', 'joint_Head_yaw', 'joint_Head',
 'joint_RMTarsus2', 'joint_RMTarsus3', 'joint_RMTarsus4',
 'joint_RMTarsus5']
 
-print(len(body))
-print(len(joints))
+"""

@@ -225,8 +225,9 @@ with alive_bar(num_steps) as bar:
             action = {'joints': step_data_block_manualcorrect[joint_ids, 0]}
 
         joint_angles[i, :] = action['joints']
-
         obs, info = nmf.step(action)
+        print(action)
+
         obs_list_tripod.append(obs)
         nmf.render()
         bar()
@@ -242,3 +243,4 @@ hlp.show_cpg_result(nmf,step_data_block_base, num_joints_to_visualize, joint_ang
 
 
 
+bash tools/dist_test.sh configs/imvoxelnet/imvoxelnet_kitti.py work_dirs/imvoxelnet_kitti/pre_trained.pth 8 --eval mAP

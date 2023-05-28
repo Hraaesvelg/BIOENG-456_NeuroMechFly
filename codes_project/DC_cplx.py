@@ -6,7 +6,7 @@ from pathlib import Path
 from flygym.envs.nmf_mujoco import NeuroMechFlyMuJoCo
 from tqdm import trange
 from flygym.util.config import all_leg_dofs
-
+from alive_progress import alive_bar
 from scipy.signal import medfilt
 
 import PIL.Image
@@ -58,15 +58,18 @@ match_leg_to_joints = np.array([i  for joint in nmf_gapped.actuated_joints for i
 # This serves to keep track of the advancement of each leg in the stepping sequence
 stepping_advancement = np.zeros(len(legs)).astype(int)
 rule1_corresponding_legs = {"LH":["LM"], "LM":["LF"], "LF":[], "RH":["RM"], "RM":["RF"], "RF":[]}
-rule2_corresponding_legs = {"LH":["LM", "RH"], "LM":["LF", "RM"], "LF":["RF"], "RH":["RM", "LH"], "RM":["RF", "LM"], "RF":["LF"]}
-rule3_corresponding_legs = {"LH":["RH"], "LM":["LH", "RM"], "LF":["LM", "RF"], "RH":["LH"], "RM":["RH", "LM"], "RF":["LF", "RM"]}
+rule2_corresponding_legs = {"LH":["LM", "RH"], "LM":["LF", "RM"], "LF":["RF"], "RH":["RM", "LH"], "RM":["RF", "LM"],
+                            "RF":["LF"]}
+rule3_corresponding_legs = {"LH":["RH"], "LM":["LH", "RM"], "LF":["LM", "RF"], "RH":["LH"], "RM":["RH", "LM"],
+                            "RF":["LF", "RM"]}
 
-#Rule 1 should supress lift off (if a leg is in swing coupled legs should not be lifted most important leg to guarantee stability)
+# Rule 1 should supress lift off (if a leg is in swing coupled legs should not be lifted most important leg to guarantee
+# stability)
 rule1_weight = -1e4
-#Rule 2 should facilitate early protraction (upon touchdown of a leg coupled legs are encouraged to swing)
+# Rule 2 should facilitate early protraction (upon touchdown of a leg coupled legs are encouraged to swing)
 rule2_weight = 2.5
 rule2_weight_contralateral = 1
-#Rule 3 should enforce late protraction (the later in the stance the more it facilitates stance initiation)
+# Rule 3 should enforce late protraction (the later in the stance the more it facilitates stance initiation)
 rule3_weight = 3
 rule3_weight_contralateral = 2
 
@@ -180,38 +183,42 @@ obs_list_cruse_gapped = []
 all_initiated_legs = []
 
 # Run the actual simulation
-for i in trange(num_steps):
+with alive_bar(num_steps) as bar:
+    for i in trange(num_steps):
+        # Decide in which leg to step
+        initiating_leg = np.argmax(leg_scores)
+        within_margin_legs = leg_scores[initiating_leg] - leg_scores <= leg_scores[initiating_leg] * percent_margin
 
-    # Decide in which leg to step
-    initiating_leg = np.argmax(leg_scores)
-    within_margin_legs = leg_scores[initiating_leg] - leg_scores <= leg_scores[initiating_leg] * percent_margin
+        # If multiple legs are within the margin choose randomly among those legs
+        if np.sum(within_margin_legs) > 1:
+            initiating_leg = np.random.choice(np.where(within_margin_legs)[0])
 
-    # If multiple legs are within the margin choose randomly among those legs
-    if np.sum(within_margin_legs) > 1:
-        initiating_leg = np.random.choice(np.where(within_margin_legs)[0])
+        # If the maximal score is zero or less (except for the first step after stabilisation to initate the locomotion) or if the leg is already stepping
+        if (leg_scores[initiating_leg] <= 0 and not i == n_stabilisation_steps + 1) or stepping_advancement[
+            initiating_leg] > 0:
+            initiating_leg = None
+        else:
+            stepping_advancement[initiating_leg] += 1
+            all_initiated_legs.append([initiating_leg, i])
 
-    # If the maximal score is zero or less (except for the first step after stabilisation to initate the locomotion) or if the leg is already stepping
-    if (leg_scores[initiating_leg] <= 0 and not i == n_stabilisation_steps + 1) or stepping_advancement[
-        initiating_leg] > 0:
-        initiating_leg = None
-    else:
-        stepping_advancement[initiating_leg] += 1
-        all_initiated_legs.append([initiating_leg, i])
+        joint_pos = step_data_block_manualcorrect[joint_ids, stepping_advancement[match_leg_to_joints]]
+        action = {'joints': joint_pos}
+        if i == 1:
+            print(action['joints'].shape)
 
-    joint_pos = step_data_block_manualcorrect[joint_ids, stepping_advancement[match_leg_to_joints]]
-    action = {'joints': joint_pos}
-    obs, info = nmf_gapped.step(action)
-    nmf_gapped.render()
-    obs_list_cruse_gapped.append(obs)
+        obs, info = nmf_gapped.step(action)
+        nmf_gapped.render()
+        obs_list_cruse_gapped.append(obs)
 
-    stepping_advancement = update_stepping_advancement(stepping_advancement, legs, interp_step_duration)
+        stepping_advancement = update_stepping_advancement(stepping_advancement, legs, interp_step_duration)
 
-    leg_scores = compute_leg_scores(rule1_corresponding_legs, rule1_weight,
-                                    rule2_corresponding_legs, rule2_weight, rule2_weight_contralateral,
-                                    rule3_corresponding_legs, rule3_weight, rule3_weight_contralateral,
-                                    stepping_advancement, leg_corresp_id, leg_stance_starts, interp_step_duration)
+        leg_scores = compute_leg_scores(rule1_corresponding_legs, rule1_weight,
+                                        rule2_corresponding_legs, rule2_weight, rule2_weight_contralateral,
+                                        rule3_corresponding_legs, rule3_weight, rule3_weight_contralateral,
+                                        stepping_advancement, leg_corresp_id, leg_stance_starts, interp_step_duration)
 
-    all_leg_scores[:, i] = leg_scores
+        all_leg_scores[:, i] = leg_scores
+        bar()
 
 nmf_gapped.save_video(out_dir / 'cruse_gapped.mp4')
 nmf_gapped.close()
@@ -272,7 +279,8 @@ def rule3_contribution(leg_contact_forces, i, leg_last_max_stance_force, time_si
     # The contribution increases as the contact force decreases (i.e the leg is comming closer to the end of the stance)
     # If the contact force goes up again, the contribution is reset to zero
     # If the leg is in stance again for a couple of steps, the contribution is reset to zero
-    # The contribution is the difference between the last max stance force and the current contact force last max stance force should be the max contact force during the stance
+    # The contribution is the difference between the last max stance force and the current contact force last max stance
+    # force should be the max contact force during the stance
 
     contribution = 0
     if i < window_size:
@@ -316,6 +324,7 @@ def rule5_decrease_increase_timestep(leg_contact_forces, i, counter_since_last_i
         counter_since_last_increase += 1
 
     return step_size_action, counter_since_last_increase
+
 
 
 time = np.arange(0, num_steps, 1)*nmf_gapped.timestep
